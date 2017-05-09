@@ -1,0 +1,476 @@
+---
+title: "Untitled"
+author: "Jonathan Bourne"
+date: "8 May 2017"
+output: html_document
+---
+
+
+I need chunked loader
+time filterer <- Make a change to the function that allows chunked or whole mode.
+add in functionality for  different kinds of filtering.
+
+
+
+```{r Packages}
+packages <-c("stringr", "lubridate", "data.table", "R.utils", "corrplot", "Matrix", "ff", "zoo", "parallel", "tidyverse")
+
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+sapply(packages, library, character.only = TRUE)
+rm(list=c("packages",  "new.packages"))
+  
+
+isAWS <-(Sys.info()[1]=="Linux")
+
+```
+
+Project Folders
+```{r Paths}
+#basewd needs to be changed
+if(isAWS){
+  basewd<- file.path(getwd(),"Dropbox/Thesis-Data")
+  Figures <- file.path(getwd(),"Dropbox/Apps/ShareLaTeX/University College London thesis/Figures")
+  Figures <- file.path(getwd(),"Dropbox/Apps/ShareLaTeX/University-College-London-thesis/Figures")
+    TexTables <- file.path(getwd(),"Dropbox/Apps/ShareLaTeX/University-College-London-thesis/Tables")
+      functioncode <- file.path(basewd, "SmartMeterThesisCode","Functions")
+  Cormats <- file.path(getwd(),"Cormats")
+GraphPath<-file.path(getwd(), "graphs")
+    options(fftempdir = getwd())
+  } else {
+  
+  basewd <- "C:/Users/pc1/Dropbox/Thesis-Data"
+  Figures <- file.path("C:/Users/pc1/Dropbox/Apps/ShareLaTeX/University-College-London-thesis/Figures")
+    TexTables <- file.path("C:/Users/pc1/Dropbox/Apps/ShareLaTeX/University-College-London-thesis/Tables")
+  functioncode <- "C:/Users/pc1/Dropbox/Thesis-Data/SmartMeterThesisCode/Functions"
+  Cormats <- "C:/Users/pc1/Dropbox/Thesis-Data/Cormats"
+  }
+
+SubDataSets <- file.path(basewd, "SubDataSets")
+datafile <- file.path(basewd, "TCa1")
+daytimeseries <-file.path(basewd,"Cleandata")
+
+  #file.path(basewd,"Cormats")
+
+```
+
+Source functions
+```{r Functions}
+setwd(functioncode)
+sapply(list.files(), source)
+```
+
+#Load data
+
+The data is too large to load all at once and perform the filtering operation so the data will be loaded piecewise filtered then all the small pieces will be recombined as searching through the model becomes longer the further down the file it needs to go the file is broken into smaller chunks to keep loading times reasonable.
+
+The data also needs tot be serparatedd into each smart meter type and the time stamps adjusted accordingly. 
+
+
+```{r Load data from csv}
+setwd(datafile)
+test<- fread("TrialMonitoringDataHH.csv", nrows = 1000)
+
+headings <- fread("TrialMonitoringDataHH.csv", nrows = 0)
+
+ScanTest <- scan("TrialMonitoringDataHH.csv", what="raw",sep=',', skip = 1,
+                 nlines = 1000) %>% 
+  matrix(., ncol= 5, byrow = TRUE) %>% 
+  data.frame(., stringsAsFactors = FALSE)
+
+names(ScanTest)<- scan("TrialMonitoringDataHH.csv", what="raw",sep=',', skip = 0, nlines = 1)
+
+
+write_csv(ScanTest, "ScanTest.csv")
+
+filt <- function(df, Date.Time, TimeZone, Start=16, End=21, segments=1000){
+
+  #create vector of rows to use so that it doesn't crash
+  names(df)[grep(Date.Time, names(df))] <- "DateTime"
+
+     df<- df %>%
+      mutate(DateTime = dmy_hms(DateTime, tz=TimeZone), 
+             hour = hour(DateTime)) %>%
+      filter(hour >= Start, hour<=End)
+
+  names(df)[grep("DateTime", names(df))] <- Date.Time 
+  
+  return(df)
+}
+
+
+f <- function(x, pos) filt(x, Date.Time = "Date and Time of capture", "GMT")
+
+test <- read_csv_chunked("ScanTest.csv", DataFrameCallback$new(f), chunk_size = 5)
+
+
+
+total <- scan("TrialMonitoringDataHH.csv", what=list(NULL),sep='\n', blank.lines.skip = F)
+
+total <- countLines("TrialMonitoringDataHH.csv")
+
+test <- read_lines("TrialMonitoringDataHH.csv", 1000) 
+
+test2 <- test %>% select_(-2, -3)
+
+test3 <- test2 %>% setNames(c("ID", "Klang", "Value")) %>% 
+  FilterTime(., Date.Time = "Klang", "GMT", segments = 100)
+
+
+
+test2<- test[1,]
+
+smartdata <- fread("TrialMonitoringDataHH.csv", drop = c(2,3))
+saveRDS(smartdata[1:38400000,], "smartdata1.rds")
+saveRDS(smartdata[38400001:76800000,], "smartdata2.rds")
+saveRDS(smartdata[76800001:115200000,], "smartdata3.rds")
+saveRDS(smartdata[115200000:153956821,], "smartdata4.rds")
+rm(smartdata)
+```
+
+Load smart meter type, separate into trilliant and logica, then filter to only include the times of interest.
+```{r Meter Type}
+setwd(datafile)
+datasource <- read.csv("HalfHourlyDataSource.csv")
+
+files<- list.files()
+file.index<- grep(".rds", files)
+
+#Runs in parallel if the code is in aws mode
+if(isAWS){
+ smartdata<- mclapply(files[file.index], function(n){
+    df <- readRDS(n)
+    print("Data Loaded")
+  filterTime(df,datasource)
+  },
+  mc.cores = detectCores())
+}else{
+  smartdata<- lapply(files[file.index], function(n){
+    df <- readRDS(n)
+    print("Data Loaded")
+  filterTime(df,datasource)
+  }
+)
+}
+smartdata <- bind_rows(smartdata)
+setwd(SubDataSets)
+saveRDS(smartdata, "filteredset.rds")
+smartdata <-readRDS("filteredset.rds")
+
+```
+
+
+```{r isnaframe}
+#data.table is used as it is better with larger table structures, this may stop being relevant with increased integration with dplyr
+smartdata <- dcast(smartdata, Date.Time ~Location.ID, 
+              value.var = "Parameter", 
+              drop=FALSE)
+
+setwd(SubDataSets)
+saveRDS(smartdata,"smartdata.rds")
+#smartdata <- readRDS("smartdata.rds")
+min(smartdata$Date.Time)
+max(smartdata$Date.Time)
+max(smartdata$Date.Time)-min(smartdata$Date.Time)
+
+
+#Create is na frame where 1 is valid and 0 is NA
+isnaframe <- 1-is.na(smartdata[,-1])*1
+saveRDS(isnaframe, "isnaframe.rds")
+#isnaframe <- readRDS("isnaframe.rds")
+rm(smartdata)
+
+#How much data is missing as a percentage of total
+1-sum(isnaframe)/(ncol(isnaframe)*nrow(isnaframe))
+
+#create the row column ordering for isnaframe
+#this takes much longer when it has to write to dropbox
+
+ordering <- createorder(isnaframe, order="both", simMat= FALSE,xblocks=5, yblocks=5, par=TRUE)
+
+saveRDS(ordering, "isnaordering.rds")
+#ordering <- readRDS("isnaordering.rds")
+```
+
+Pre cleaning unordered
+```{r precleaning plot}
+test <- orderedheat(isnaframe, order = "none", merge = 5, simMat = FALSE,
+                xblocks=10, yblocks=10, mid = 0.5, legend="Percent Valid")
+test+     
+    labs(x = "Date time",
+         y = "Smartmeter ID") +ggtitle("Missing data pre-cleaning")
+
+setwd(Figures)
+ggsave("unorderedPrecleaningmissing.pdf")
+rm(test)
+#smartmeter % complete data
+
+```
+
+
+Pre cleaning ordered
+```{r precleaning ordered}
+test <- bigheat(isnaframe[ordering$Roworder,ordering$Colorder],
+                merge = 5,mid=0.5, legend="Percent Valid")
+test+     
+    labs(x = "Date time",
+         y = "Smartmeter ID") +ggtitle("Missing data pre-cleaning")
+ggsave("Precleaningmissing.pdf")
+rm(test)
+
+```
+
+
+
+highlighting smart meter groups in the correct time order. 
+As there are two clear groups of smartmeters and a group of smart meters that have not delivered very good quality information, it is important to look at how the clusters behave in normal time
+```{r extract smartmeters}
+
+findbreak<- t(isnaframe[ordering$Roworder, ordering$Colorder[300:6000]]) %>% as.data.frame %>%
+  mutate(rowsum = rowSums(.), 
+         diff= lag(rowsum,1), 
+         rowID= 1:nrow(.), 
+         rM=(rowsum + lag(rowsum)+lead(rowsum))/3) %>% 
+  select(rowsum, diff, rowID, rM)
+
+ggplot(findbreak, aes(x = rowID, y = rowsum)) + geom_line() +
+  ggtitle("Identifying break points in the smartmeter clusters") +
+  labs(x="Cluster ordered MeterIDs", y = "Number of Valid data points")
+ggsave("breakpoints.pdf")
+#break point at groups at 1:2380 and 2381:4530 add list of smart meters in the appendix along with time periods
+```
+
+
+Lower Cluster shown in chronological time 
+```{r plot valid meters}
+
+#ensures aggregation happens correctly
+lowerclustID <- 300:6000 #the smart meters to select
+
+test <- bigheat(isnaframe[,ordering$Colorder[lowerclustID]],
+                merge = 5,mid=0.5, legend="Percent Valid")
+test+     
+    labs(x = "Date time",
+         y = "Smartmeter ID") +ggtitle("Missing data pre-cleaning")
+
+ggsave("LowerPrecleaningmissing.pdf")
+
+```
+
+
+#Removing highly missing data
+
+Now the data is broken into two clusters of smart meters the time componant can be filtered to leave  high quality data set.
+
+
+
+Cleaning the cluster
+```{r cleaningthedata}
+setwd(SubDataSets)
+#makes a matrix where 1 means there is data and 0 means NA
+lowerclust <- isnaframe[, ordering$Colorder[lowerclustID]]%>% as.data.frame
+saveRDS(lowerclust, "lowerclust.rds")
+#lowerclust <- readRDS("lowerclust.rds")
+lowertimepercs <- rowSums(lowerclust)/ncol(lowerclust)
+
+setwd(Figures)
+
+
+#create a data frame showing how many time periods have more than x% values
+nonmissing <- data.frame(cutoff = seq(0.1,1,0.01), TimePeriods =NA, SmartMeters = NA)
+
+nonmissing$TimePeriods <- sapply(nonmissing$cutoff ,function(n) {
+  sum(lowertimepercs>n, na.rm = TRUE)
+  })
+
+ggplot(nonmissing, aes(x= cutoff, y= TimePeriods)) + geom_line() +ggtitle("Number of Time Periods that have at least \nthe percentage of valid data indicated by the cut off") +xlab("Cut Off") +ylab("Number of Valid Time Periods")
+ggsave("NAtimeperiodslowerclust.pdf")
+
+
+#Remove Time periods with less than 90% valid data
+lowerclust <- lowerclust[lowertimepercs>0.9,]
+
+lowermeterpercs <- colSums(lowerclust)/nrow(lowerclust)
+
+nonmissing$SmartMeters <- sapply(nonmissing$cutoff ,function(n) {
+  sum(lowermeterpercs>n, na.rm = TRUE)
+  })
+
+ggplot(nonmissing, aes(x= cutoff, y= SmartMeters)) + geom_line() +ggtitle("Number smart meters that have at least \nthe percentage of valid data indicated by the cut off") +xlab("Cut Off") +ylab("Number of Valid smart meters")
+ggsave("NAsmartmeters.pdf")
+
+#filter the meters
+lowerclust <- lowerclust[,lowermeterpercs >0.99]
+totalmeters <- sum(lowermeterpercs >0.99)
+
+#How much data is missing as a percentage of total post cleaning
+sum((lowerclust))/(ncol(lowerclust)*nrow(lowerclust))
+rm(isnaframe)
+rm(lowerclust)
+
+setwd(SubDataSets)
+smartdata <- readRDS("smartdata.rds")
+
+#Check how many days are missing to have contiguous days from start to finish in the block
+
+datevect <- as.Date(smartdata$Date.Time)[lowertimepercs>0.9] %>% unique
+alldays <-seq(from=min(datevect) , to=max(datevect),by = "day") 
+MissingDays <-alldays[!(alldays %in% unique(datevect))] 
+
+#there are only three days missing for a full house make a vector to inlcude them as well
+MissingDays <-as.Date(smartdata$Date.Time) %in% MissingDays
+
+cleandata <-smartdata[,c(1,(1+ordering$Colorder[lowerclustID]))]
+size <- ncol(cleandata)*nrow(cleandata)
+cleandata <- cleandata[(lowertimepercs>0.9|MissingDays), c(TRUE,lowermeterpercs >0.99)]
+
+
+
+ncol(cleandata)*nrow(cleandata)/size #amount of remaingin data
+
+saveRDS(cleandata, "cleandata.rds")
+#cleandata <-readRDS("cleandata.rds")
+```
+
+The result of cleaning both the cluster is that only minor smart meter removal specific removal needs to take place after the time periods have been cleaned up. This suggests that within the clusters data quality is strongly related related to time period and not to smart meter.
+
+#Exploring the data
+
+How many days are full days?
+```{r}
+fulldays <- cleandata %>% group_by(date(Date.Time)) %>% summarise(total = n()) %>%
+  rename(Date.Time = `date(Date.Time)`)
+table(fulldays$total)
+
+```
+
+
+how many days have date 1 day before and 7 days before?
+```{r}
+weekdiff <- fulldays$Date.Time -ddays(7)
+sum(weekdiff %in% fulldays$Date.Time) #239 days
+
+weekdiff <- fulldays$Date.Time -ddays(1)
+sum(weekdiff %in% fulldays$Date.Time) #239 days
+
+sum(is.na(cleandata))
+
+sum(is.na(cleandata))/size
+
+#The missingness of the days that have been included even though they don't make the cut.
+day1<- cleandata %>% filter(as.Date(Date.Time)==ymd("2011-06-29")) %>%is.na %>% sum
+1-day1/(12*5261)
+
+day1<- cleandata %>% filter(as.Date(Date.Time)==ymd("2011-10-31")) %>%is.na %>% sum
+1-day1/(12*5261)
+day1<- cleandata %>% filter(as.Date(Date.Time)==ymd("2011-12-12")) %>%is.na %>% sum
+1-day1/(12*5261)
+
+```
+
+
+
+Fill in missing values by day time average, then average by day using a three time period window
+```{r fill in missing}
+setwd(SubDataSets)
+cleandata <- readRDS("cleandata.rds")
+#add in missing row for day 177
+missingrow <-matrix(NA, nrow=1,ncol=ncol(cleandata)) %>% as.data.frame %>%
+  mutate_all(funs(as.numeric))
+names(missingrow) <- names(cleandata)
+
+missingrow <- missingrow  %>% mutate(Date.Time= as.POSIXct("2011-10-25 18:00:00", tz="Europe/London") + minutes(30))
+
+cleandata <- cleandata %>% bind_rows(., missingrow) %>% 
+  arrange(Date.Time)
+
+#make a data frame of average day hour in values
+dayhourmin <- paste(wday(cleandata$Date.Time),
+                    hour(cleandata$Date.Time),
+                    minute(cleandata$Date.Time),
+                    sep=":")
+
+meanvals <- cleandata[,-1] %>%
+  mutate(time.day = dayhourmin) %>% group_by(time.day) %>%
+  summarise_each(funs(mean(., na.rm=TRUE))) %>%ungroup
+
+navect <- cleandata %>% is.na %>% which(., arr.ind=T)
+
+NACols <- unique(navect[,2] )
+
+for(i in 1:length(NACols)){
+colID <-NACols[i]
+rowIDs <- navect[navect[,2]==colID,1]
+
+RowsFromMeanVals<- match(dayhourmin[rowIDs],meanvals$time.day)
+
+cleandata[rowIDs,colID] <- meanvals[RowsFromMeanVals,colID] %>%unlist
+if((i%%100)==0){print(i)}  
+}
+
+#check there are no Na values
+cleandata %>% is.na %>% sum
+saveRDS(cleandata, file="cleandatafilled.rds")
+#cleandata <- readRDS("cleandatafilled.rds")
+
+
+rm(list= c("NACols","dayhourmin", "i","RowsFromMeanVals", "navect", "meanvals", "colID", "rowIDs", "missingrow"))
+
+
+
+```
+
+
+```{r Internal Cor}
+set.seed(1238)
+NodeIDs <- sample(1:5260, 50)+1
+IntCor <- cleandata[,c(1,NodeIDs)] %>%
+  mutate(Time = paste(hour(cleandata$Date.Time),
+                    minute(cleandata$Date.Time),
+                    sep=":"),
+         Date = as.Date(Date.Time)
+)%>%  gather(key = NodeID, value = kwh, 
+             -Date.Time, 
+             -Time,
+             -Date) %>% select(-Date.Time) %>%
+  spread(key= Time, value=kwh)
+
+IntCorList <- mclapply(unique(IntCor$NodeID), function(n){
+  
+  IntCor %>% filter(NodeID ==n) %>% select(-NodeID, -Date) %>%
+    t %>%
+    cor
+  },
+mc.cores=detectCores())
+
+#visualise the corellation matrix of the first smart mater
+IntCorVis <-orderedheat(IntCorList[[2]], order="both", simMat = TRUE, merge = 1, mid = 0)
+IntCorVis
+
+IntCorVis2 <-orderedheat(abs(IntCorList[[1]]), order="both", simMat = TRUE, merge = 1)
+IntCorVis2
+
+  MeanAbsCor <- sapply(1:50, function(n) mean(abs(IntCorList[[n]]))) %>% data.frame(value=., NodeID= NodeIDs)  
+  
+  ggplot(MeanAbsCor, aes(x= value)) + geom_density(fill="steelblue", alpha =0.7) +
+    labs(title= "Mean absolute correlation for 50 nodes with themselves", 
+         x= "Mean absolute Corellation" )
+  setwd(file.path(Figures, "Results"))    
+  ggsave("MeanAbsCorr.pdf")
+  
+  
+  #Distribution of the data
+  
+cleandata %>% gather(. , key=SMartID, value=kWh, -Date.Time) %>%
+  ggplot(., aes(x=kWh)) + geom_density(fill="steelblue", alpha =0.7) + ggtitle("Distribution of energy consumption")
+ggsave("energydensity.pdf")
+  
+cleandata %>% gather(. , key=SMartID, value=kWh, -Date.Time) %>%
+  ggplot(., aes(x=log10(kWh))) + geom_density(fill="steelblue", alpha =0.7) + ggtitle("Distribution of energy consumption")
+  setwd(file.path(Figures, "Appendix")) 
+ggsave("logenergydensity.pdf")
+
+
+```
+
