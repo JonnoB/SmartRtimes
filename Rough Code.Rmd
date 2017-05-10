@@ -75,7 +75,7 @@ test<- fread("TrialMonitoringDataHH.csv", nrows = 1000)
 headings <- fread("TrialMonitoringDataHH.csv", nrows = 0)
 
 ScanTest <- scan("TrialMonitoringDataHH.csv", what="raw",sep=',', skip = 1,
-                 nlines = 1000) %>% 
+                 nlines = 1000000) %>% 
   matrix(., ncol= 5, byrow = TRUE) %>% 
   data.frame(., stringsAsFactors = FALSE)
 
@@ -84,42 +84,23 @@ names(ScanTest)<- scan("TrialMonitoringDataHH.csv", what="raw",sep=',', skip = 0
 
 write_csv(ScanTest, "ScanTest.csv")
 
-filt <- function(df, Date.Time, TimeZone, Start=16, End=21, segments=1000){
 
-  #create vector of rows to use so that it doesn't crash
-  names(df)[grep(Date.Time, names(df))] <- "DateTime"
-
-     df<- df %>%
-      mutate(DateTime = dmy_hms(DateTime, tz=TimeZone), 
-             hour = hour(DateTime)) %>%
-      filter(hour >= Start, hour<=End)
-
-  names(df)[grep("DateTime", names(df))] <- Date.Time 
-  
-  return(df)
-}
-
-
-f <- function(x, pos) filt(x, Date.Time = "Date and Time of capture", "GMT")
+f <- function(x, pos) FilterTime(x, Date.Time = "Date and Time of capture", "GMT")
 
 test <- read_csv_chunked("ScanTest.csv", DataFrameCallback$new(f), chunk_size = 5)
 
+test <- read_csv_chunked("TrialMonitoringDataHH.csv", DataFrameCallback$new(f), chunk_size = 1e4)
 
 
-total <- scan("TrialMonitoringDataHH.csv", what=list(NULL),sep='\n', blank.lines.skip = F)
+MakeManyRDS("ScanTest.csv", "test2", 1e5)
 
-total <- countLines("TrialMonitoringDataHH.csv")
-
-test <- read_lines("TrialMonitoringDataHH.csv", 1000) 
-
-test2 <- test %>% select_(-2, -3)
-
-test3 <- test2 %>% setNames(c("ID", "Klang", "Value")) %>% 
-  FilterTime(., Date.Time = "Klang", "GMT", segments = 100)
+MakeManyRDS("TrialMonitoringDataHH.csv", "test", 1e6)
 
 
+TestOut <- LoadManyRDS("test2", 'filter(x, `Location ID`==120)')
+TestOutWhole <- LoadManyRDS("test", 
+                       'FilterTime(x, Date.Time = "Date and Time of capture", "GMT")')
 
-test2<- test[1,]
 
 smartdata <- fread("TrialMonitoringDataHH.csv", drop = c(2,3))
 saveRDS(smartdata[1:38400000,], "smartdata1.rds")
