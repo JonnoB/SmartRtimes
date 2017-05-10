@@ -15,5 +15,8 @@ LoadManyRDS <- function(FolderPath,  CallFunction = NULL){
   }
   
   
-   list.files(FolderPath) %>% map_df(~g(.x))
+   list.files(FolderPath)[list.files(FolderPath) %>% 
+                            sub("RDS_", "",.) %>% 
+                            as.numeric(.) %>% order()]  %>% 
+     map_df(~g(.x))
 }

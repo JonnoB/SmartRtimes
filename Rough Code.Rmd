@@ -97,10 +97,13 @@ MakeManyRDS("ScanTest.csv", "test2", 1e5)
 MakeManyRDS("TrialMonitoringDataHH.csv", "test", 1e6)
 
 
+
+
 TestOut <- LoadManyRDS("test2", 'filter(x, `Location ID`==120)')
 TestOutWhole <- LoadManyRDS("test", 
                        'FilterTime(x, Date.Time = "Date and Time of capture", "GMT")')
-
+list.files("test")
+test <- readRDS("test/RDS_1000001")
 
 smartdata <- fread("TrialMonitoringDataHH.csv", drop = c(2,3))
 saveRDS(smartdata[1:38400000,], "smartdata1.rds")
