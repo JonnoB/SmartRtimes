@@ -31,87 +31,61 @@ Project Folders
 #basewd needs to be changed
 if(isAWS){
   basewd<- file.path(getwd(),"Dropbox/Thesis-Data")
-  Figures <- file.path(getwd(),"Dropbox/Apps/ShareLaTeX/University College London thesis/Figures")
-  Figures <- file.path(getwd(),"Dropbox/Apps/ShareLaTeX/University-College-London-thesis/Figures")
-    TexTables <- file.path(getwd(),"Dropbox/Apps/ShareLaTeX/University-College-London-thesis/Tables")
+
       functioncode <- file.path(basewd, "SmartMeterThesisCode","Functions")
-  Cormats <- file.path(getwd(),"Cormats")
-GraphPath<-file.path(getwd(), "graphs")
-    options(fftempdir = getwd())
   } else {
   
   basewd <- "C:/Users/pc1/Dropbox/Thesis-Data"
-  Figures <- file.path("C:/Users/pc1/Dropbox/Apps/ShareLaTeX/University-College-London-thesis/Figures")
-    TexTables <- file.path("C:/Users/pc1/Dropbox/Apps/ShareLaTeX/University-College-London-thesis/Tables")
   functioncode <- "C:/Users/pc1/Dropbox/Thesis-Data/SmartMeterThesisCode/Functions"
-  Cormats <- "C:/Users/pc1/Dropbox/Thesis-Data/Cormats"
   }
 
 SubDataSets <- file.path(basewd, "SubDataSets")
 datafile <- file.path(basewd, "TCa1")
-daytimeseries <-file.path(basewd,"Cleandata")
-
-  #file.path(basewd,"Cormats")
 
 ```
 
 Source functions
 ```{r Functions}
-setwd(functioncode)
+setwd("/home/jonno/SmartRtimes/Functions")
 sapply(list.files(), source)
+
+#setwd(functioncode)
+#sapply(list.files(), source)
 ```
 
 #Load data
 
 The data is too large to load all at once and perform the filtering operation so the data will be loaded piecewise filtered then all the small pieces will be recombined as searching through the model becomes longer the further down the file it needs to go the file is broken into smaller chunks to keep loading times reasonable.
 
-The data also needs tot be serparatedd into each smart meter type and the time stamps adjusted accordingly. 
 
-
-```{r Load data from csv}
+Load an example dataset to test the functions
+```{r}
 setwd(datafile)
-test<- fread("TrialMonitoringDataHH.csv", nrows = 1000)
 
-headings <- fread("TrialMonitoringDataHH.csv", nrows = 0)
-
-ScanTest <- scan("TrialMonitoringDataHH.csv", what="raw",sep=',', skip = 1,
-                 nlines = 1000000) %>% 
-  matrix(., ncol= 5, byrow = TRUE) %>% 
-  data.frame(., stringsAsFactors = FALSE)
-
-names(ScanTest)<- scan("TrialMonitoringDataHH.csv", what="raw",sep=',', skip = 0, nlines = 1)
-
-
+ScanTest <- JustTheseRows("TrialMonitoringDataHH.csv", 1, 10000, Columns = 5, Header = T)
 write_csv(ScanTest, "ScanTest.csv")
 
+#Sample random Rows from the dataset
+SomeRows <- RandomRows("TrialMonitoringDataHH.csv", 1000,100,5)
 
-f <- function(x, pos) FilterTime(x, Date.Time = "Date and Time of capture", "GMT")
-
-test <- read_csv_chunked("ScanTest.csv", DataFrameCallback$new(f), chunk_size = 5)
-
-test <- read_csv_chunked("TrialMonitoringDataHH.csv", DataFrameCallback$new(f), chunk_size = 1e4)
+```
 
 
+Test the loading and saving of the data
+
+```{r Load data from csv}
 MakeManyRDS("ScanTest.csv", "test2", 1e5)
+TestOut <- LoadManyRDS("test2", 'filter(x, `Location ID`==120)')
 
 MakeManyRDS("TrialMonitoringDataHH.csv", "test", 1e6)
 
-
-
-
-TestOut <- LoadManyRDS("test2", 'filter(x, `Location ID`==120)')
 TestOutWhole <- LoadManyRDS("test", 
-                       'FilterTime(x, Date.Time = "Date and Time of capture", "GMT")')
-list.files("test")
-test <- readRDS("test/RDS_1000001")
+                       'FilterTime(x, Date.Time = "Date and Time of capture", "GMT") %>% select(-`Measurement Description`, -`Parameter Type and Units`)') #the chained command might not work needs to be tested
 
-smartdata <- fread("TrialMonitoringDataHH.csv", drop = c(2,3))
-saveRDS(smartdata[1:38400000,], "smartdata1.rds")
-saveRDS(smartdata[38400001:76800000,], "smartdata2.rds")
-saveRDS(smartdata[76800001:115200000,], "smartdata3.rds")
-saveRDS(smartdata[115200000:153956821,], "smartdata4.rds")
-rm(smartdata)
 ```
+
+
+#Now the data can be loaded and saved effectively the trilliant logica problem needs to be resolved
 
 Load smart meter type, separate into trilliant and logica, then filter to only include the times of interest.
 ```{r Meter Type}
@@ -144,6 +118,8 @@ smartdata <-readRDS("filteredset.rds")
 
 ```
 
+
+#After the data has been cleanded for the logica trilliant split, the data needs to be reshaped for a smartmeter per row and a time unit per column.
 
 ```{r isnaframe}
 #data.table is used as it is better with larger table structures, this may stop being relevant with increased integration with dplyr
