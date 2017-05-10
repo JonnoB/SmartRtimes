@@ -1,4 +1,4 @@
-FilterTime <-function(df, Date.Time, TimeZone, Start=16, End=21){
+FilterTime <-function(df, Date.Time, TimeZone, Start=0, End=24){
   #This function filters the Hours to include only the periods you are interesteding
   #Requires the timezone of the data being collected.
   

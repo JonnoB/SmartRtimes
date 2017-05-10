@@ -62,7 +62,7 @@ Load an example dataset to test the functions
 ```{r}
 setwd(datafile)
 
-ScanTest <- JustTheseRows("TrialMonitoringDataHH.csv", 1, 10000, Columns = 5, Header = T)
+ScanTest <- JustTheseRows("TrialMonitoringDataHH.csv", 1, 100000, Columns = 5, Header = T)
 write_csv(ScanTest, "ScanTest.csv")
 
 #Sample random Rows from the dataset
@@ -81,6 +81,26 @@ MakeManyRDS("TrialMonitoringDataHH.csv", "test", 1e6)
 
 TestOutWhole <- LoadManyRDS("test", 
                        'FilterTime(x, Date.Time = "Date and Time of capture", "GMT") %>% select(-`Measurement Description`, -`Parameter Type and Units`)') #the chained command might not work needs to be tested
+
+
+test1 <- ScanTest[1:2,] %>% FilterTime(., "Date and Time of capture", "GMT", Start = 0, End=24)
+test2 <- ScanTest[1:2,] %>% FilterTime(., "Date and Time of capture", "EST", Start = 0, End=24)
+
+test3<- bind_rows(test1, test2)
+
+d2 <- datasource %>% mutate(TimeZone = ifelse(Data.provider == "Logica",
+                                              "GMT",
+                                              "Europe/London")) %>%
+  select(-Data.provider)
+
+.x %>% left_join(., d2, by= C( "Location ID"="Location.ID"))
+  
+  unique(d2$TimeZone) %>% map_df(~{
+    filter(data$`Location.ID` .x) %>% 
+                                   eval(parse(test = 
+                                      paste0('FilterTime(., Date.Time = "Date and Time of capture", ' .x ')')) )
+    }
+    )
 
 ```
 
