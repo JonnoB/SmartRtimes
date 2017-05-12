@@ -5,16 +5,19 @@ SaveManyRDS <- function(FileName, FolderPath, Chunksize=1e5, CallFunction = NULL
   #Chunksize :  The Maximum number of rows of the chunks which will make up the smaller files
   #CallFunction : If additional functions are to be called they are 
   #               included here as quoted or character strings
-     dir.create(FolderPath)
+  if(dir.exists(FolderPath)) {unlink( FolderPath, recursive = TRUE)  } #Deleteing pre exisiting folders prevents errors when loading data agian
+  
+  dir.create(FolderPath)
   
   g <- function(z,pos){
     x<- z
     
     if (!is.null(CallFunction)){
-      x <- eval(parse(text = CallFunction))
+      x <- eval(CallFunction) 
     }
-    saveRDS(x, file.path(FolderPath, paste("RDS",pos, sep="_")))
-  }
+    write.csv(x, file.path(FolderPath, paste("csv",pos,".csv", sep="_")), row.names = FALSE)
+
+      }
   read_csv_chunked(FileName, SideEffectChunkCallback$new(g), chunk_size = Chunksize)
   
 }

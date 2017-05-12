@@ -6,17 +6,26 @@ LoadManyRDS <- function(FolderPath,  CallFunction = NULL){
   
   g <- function(z){
     print(z)
-    x<- readRDS(file.path(FolderPath, z))
-    
+    x<- read.csv(file.path(FolderPath, z), 
+                 colClasses = "character",
+                 check.names = FALSE)
+
     if (!is.null(CallFunction)){
-      x <- eval(parse(text = CallFunction))
+      x <- eval(CallFunction) 
     }
    return(x) 
   }
   
+  LoadOrder <- list.files(FolderPath) %>% 
+    sub("CSV_", "",.) %>%
+    sub("_.csv", "",.) %>%
+    as.numeric(.) %>% order()
   
-   list.files(FolderPath)[list.files(FolderPath) %>% 
-                            sub("RDS_", "",.) %>% 
-                            as.numeric(.) %>% order()]  %>% 
+  
+    # LoadOrder <- list.files(FolderPath) %>% 
+  #   sub("RDS_", "",.) %>% 
+  #   as.numeric(.) %>% order()
+
+   list.files(FolderPath)[LoadOrder]  %>% 
      map_df(~g(.x))
 }

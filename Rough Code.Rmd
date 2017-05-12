@@ -66,41 +66,74 @@ ScanTest <- JustTheseRows("TrialMonitoringDataHH.csv", 1, 100000, Columns = 5, H
 write_csv(ScanTest, "ScanTest.csv")
 
 #Sample random Rows from the dataset
-SomeRows <- RandomRows("TrialMonitoringDataHH.csv", 1000,100,5)
+#SomeRows <- RandomRows("TrialMonitoringDataHH.csv", 10000,100,5)
 
 ```
 
 
 Test the loading and saving of the data
 
+ETL
+
+Start Chunk Loading
+Convert to time taking account of multiple timezones
+Filter for the time period under investigation
+Reshape into wide form
+
+Loading - SAveMANYCSV/LOADmanyCSV
+Conversion - COnvert to Time
+Filter Filter Time
+Reshape - use already existing functions.
+
+
+Function1 <- 'ConvertToTime %>% FilterTime'
+
+data <- LoadManyCSV("folder", Function1 )
+
 ```{r Load data from csv}
-MakeManyRDS("ScanTest.csv", "test2", 1e5)
-TestOut <- LoadManyRDS("test2", 'filter(x, `Location ID`==120)')
+
+
+Function1 <- substitute(
+  FilterTime(x, Date.Time = "Date and Time of capture", "GMT") %>% select(-`Measurement Description`, -`Parameter Type and Units`)
+  )
+Function2 <-substitute(filter(x, `Location ID`==120)) 
+Function3 <- substitute(
+  x %>% 
+    left_join(., mutate(d2, Location.ID = as.character(Location.ID)), by= c("Location ID"="Location.ID")) %>%
+    split(.$TimeZoneCol) %>%
+    map_df(~FilterTime(., "Date and Time of capture", unique(.x$TimeZoneCol)))
+  )
+Function4 <- substitute(ConvertToTime(x, d2))
+
+SaveManyRDS("ScanTest.csv", "test2", 1e4)
+TestOut <- LoadManyRDS("test2", Function3)
+
 
 MakeManyRDS("TrialMonitoringDataHH.csv", "test", 1e6)
-
-TestOutWhole <- LoadManyRDS("test", 
-                       'FilterTime(x, Date.Time = "Date and Time of capture", "GMT") %>% select(-`Measurement Description`, -`Parameter Type and Units`)') #the chained command might not work needs to be tested
+TestOutWhole <- LoadManyRDS("test", Function4) 
 
 
-test1 <- ScanTest[1:2,] %>% FilterTime(., "Date and Time of capture", "GMT", Start = 0, End=24)
-test2 <- ScanTest[1:2,] %>% FilterTime(., "Date and Time of capture", "EST", Start = 0, End=24)
 
-test3<- bind_rows(test1, test2)
-
-d2 <- datasource %>% mutate(TimeZone = ifelse(Data.provider == "Logica",
+d2 <- read.csv("HalfHourlyDataSource.csv") %>% mutate(TimeZoneCol = ifelse(Data.provider == "Logica",
                                               "GMT",
                                               "Europe/London")) %>%
   select(-Data.provider)
 
-.x %>% left_join(., d2, by= C( "Location ID"="Location.ID"))
-  
-  unique(d2$TimeZone) %>% map_df(~{
-    filter(data$`Location.ID` .x) %>% 
-                                   eval(parse(test = 
-                                      paste0('FilterTime(., Date.Time = "Date and Time of capture", ' .x ')')) )
-    }
-    )
+
+ ConvertToTime <- function(x, Convdf, ID1 = "Location ID", ID2 = "Location.ID", TimeZoneCol = "TimeZoneCol"){
+   #This function deals with multiple time zones in the data.
+   names(Convdf)[grep(TimeZoneCol, names(Convdf))] <- "TimeZoneCol"
+   
+   x <- x %>% 
+    left_join(., mutate(Convdf, Location.ID = as.character(Location.ID)), by= c( "Location ID"="Location.ID")) %>%
+    split(.$TimeZoneCol) %>%
+    map_df(~FilterTime(., "Date and Time of capture", unique(.x$TimeZoneCol)))
+ 
+   names(x)[grep("TimeZoneCol", names(x))] <- TimeZoneCol 
+   
+   return(x)
+   }
+
 
 ```
 
