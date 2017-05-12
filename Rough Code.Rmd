@@ -106,7 +106,7 @@ Function3 <- substitute(
 Function4 <- substitute(ConvertToTime(x, d2))
 
 SaveManyRDS("ScanTest.csv", "test2", 1e4)
-TestOut <- LoadManyRDS("test2", Function3)
+TestOut <- LoadManyRDS("test2", Function4)
 
 
 MakeManyRDS("TrialMonitoringDataHH.csv", "test", 1e6)
@@ -114,18 +114,18 @@ TestOutWhole <- LoadManyRDS("test", Function4)
 
 
 
-d2 <- read.csv("HalfHourlyDataSource.csv") %>% mutate(TimeZoneCol = ifelse(Data.provider == "Logica",
+d2 <- read.csv("HalfHourlyDataSource.csv", check.names = FALSE) %>% mutate(TimeZoneCol = ifelse(`Data provider` == "Logica",
                                               "GMT",
                                               "Europe/London")) %>%
-  select(-Data.provider)
+  select(-`Data provider`)
 
 
- ConvertToTime <- function(x, Convdf, ID1 = "Location ID", ID2 = "Location.ID", TimeZoneCol = "TimeZoneCol"){
+#This needs to be simplified so that the joining of the timezone is not part of the function
+ ConvertToTime <- function(x, TimeZoneCol = "TimeZoneCol"){
    #This function deals with multiple time zones in the data.
    names(Convdf)[grep(TimeZoneCol, names(Convdf))] <- "TimeZoneCol"
    
-   x <- x %>% 
-    left_join(., mutate(Convdf, Location.ID = as.character(Location.ID)), by= c( "Location ID"="Location.ID")) %>%
+   x <- x %>%
     split(.$TimeZoneCol) %>%
     map_df(~FilterTime(., "Date and Time of capture", unique(.x$TimeZoneCol)))
  
@@ -134,6 +134,11 @@ d2 <- read.csv("HalfHourlyDataSource.csv") %>% mutate(TimeZoneCol = ifelse(Data.
    return(x)
    }
 
+ 
+ x %>% 
+    left_join(., mutate(Convdf, `Location ID` = as.character(`Location ID`)), by= "Location ID") %>%
+ 
+ 
 
 ```
 
