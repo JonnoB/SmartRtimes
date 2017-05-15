@@ -1,4 +1,4 @@
-FilterTime <-function(df, Date.Time, TimeZone, Start=0, End=24){
+FilterTime <-function(df, Date.Time, Start=0, End=24){
   #This function filters the Hours to include only the periods you are interesteding
   #Requires the timezone of the data being collected.
   
@@ -15,8 +15,7 @@ FilterTime <-function(df, Date.Time, TimeZone, Start=0, End=24){
   names(df)[grep(Date.Time, names(df))] <- "DateTime"
   
   df<- df %>%
-    mutate(DateTime = dmy_hms(DateTime, tz=TimeZone), 
-           hour = hour(DateTime)) %>%
+    mutate(hour = hour(DateTime)) %>%
     filter(hour >= Start, hour<=End)
   
   names(df)[grep("DateTime", names(df))] <- Date.Time 

@@ -93,25 +93,26 @@ data <- LoadManyCSV("folder", Function1 )
 ```{r Load data from csv}
 
 
-Function1 <- substitute(
-  FilterTime(x, Date.Time = "Date and Time of capture", "GMT") %>% select(-`Measurement Description`, -`Parameter Type and Units`)
-  )
 Function2 <-substitute(filter(x, `Location ID`==120)) 
-Function3 <- substitute(
-  x %>% 
-    left_join(., mutate(d2, Location.ID = as.character(Location.ID)), by= c("Location ID"="Location.ID")) %>%
-    split(.$TimeZoneCol) %>%
-    map_df(~FilterTime(., "Date and Time of capture", unique(.x$TimeZoneCol)))
-  )
-Function4 <- substitute(ConvertToTime(x, d2))
 
-SaveManyRDS("ScanTest.csv", "test2", 1e4)
+#These commands are used for chunked laoding they do the following
+#join on the timezone data
+#Convert to time object with regards the timezone of the measurement
+#Filter to only the hours required
+Function4 <- substitute( 
+  x %>% 
+    left_join(., mutate(d2, 
+                        `Location ID` = as.character(`Location ID`)), 
+              by= "Location ID") %>% 
+    ConvertToTime(., "Date and Time of capture") %>% #Convert the time column to time class
+  FilterTime(.,"Date and Time of capture", Start = 16, End = 21)
+  )
+
+#SaveManyRDS("ScanTest.csv", "test2", 1e4)
 TestOut <- LoadManyRDS("test2", Function4)
 
-
-MakeManyRDS("TrialMonitoringDataHH.csv", "test", 1e6)
+#MakeManyRDS("TrialMonitoringDataHH.csv", "test", 1e6)
 TestOutWhole <- LoadManyRDS("test", Function4) 
-
 
 
 d2 <- read.csv("HalfHourlyDataSource.csv", check.names = FALSE) %>% mutate(TimeZoneCol = ifelse(`Data provider` == "Logica",
@@ -121,24 +122,13 @@ d2 <- read.csv("HalfHourlyDataSource.csv", check.names = FALSE) %>% mutate(TimeZ
 
 
 #This needs to be simplified so that the joining of the timezone is not part of the function
- ConvertToTime <- function(x, TimeZoneCol = "TimeZoneCol"){
-   #This function deals with multiple time zones in the data.
-   names(Convdf)[grep(TimeZoneCol, names(Convdf))] <- "TimeZoneCol"
-   
-   x <- x %>%
-    split(.$TimeZoneCol) %>%
-    map_df(~FilterTime(., "Date and Time of capture", unique(.x$TimeZoneCol)))
- 
-   names(x)[grep("TimeZoneCol", names(x))] <- TimeZoneCol 
-   
-   return(x)
-   }
 
- 
- x %>% 
-    left_join(., mutate(Convdf, `Location ID` = as.character(`Location ID`)), by= "Location ID") %>%
- 
- 
+test <- LoadManyRDS("test2") %>% 
+    left_join(., mutate(d2, 
+                        `Location ID` = as.character(`Location ID`)), 
+              by= "Location ID") %>% 
+  ConvertToTime(., "Date and Time of capture") %>% 
+  FilterTime(.,"Date and Time of capture", Start = 16, End = 21)
 
 ```
 
