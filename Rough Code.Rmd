@@ -49,8 +49,14 @@ Source functions
 setwd("/home/jonno/SmartRtimes/Functions")
 sapply(list.files(), source)
 
+setwd(file.path("/home/jonno/BigHeat"))
+sapply(list.files(pattern = ".R"), source)
+
+
 #setwd(functioncode)
 #sapply(list.files(), source)
+
+setwd()
 ```
 
 #Load data
@@ -92,21 +98,27 @@ data <- LoadManyCSV("folder", Function1 )
 
 ```{r Load data from csv}
 
-
-Function2 <-substitute(filter(x, `Location ID`==120)) 
-
-#These commands are used for chunked laoding they do the following
+#These commands are used for chunked loading they do the following
 #join on the timezone data
 #Convert to time object with regards the timezone of the measurement
 #Filter to only the hours required
 Function4 <- substitute( 
   x %>% 
-    left_join(., mutate(d2, 
+    left_join(., mutate(TimeZoneDF, 
                         `Location ID` = as.character(`Location ID`)), 
               by= "Location ID") %>% 
     ConvertToTime(., "Date and Time of capture") %>% #Convert the time column to time class
   FilterTime(.,"Date and Time of capture", Start = 16, End = 21)
   )
+
+
+
+#Loads the timezone data into a data frame
+TimeZoneDF <- read.csv("HalfHourlyDataSource.csv", check.names = FALSE) %>% mutate(TimeZoneCol = ifelse(`Data provider` == "Logica",
+                                              "GMT",
+                                              "Europe/London")) %>%
+  select(-`Data provider`)
+
 
 #SaveManyRDS("ScanTest.csv", "test2", 1e4)
 TestOut <- LoadManyRDS("test2", Function4)
@@ -115,16 +127,12 @@ TestOut <- LoadManyRDS("test2", Function4)
 TestOutWhole <- LoadManyRDS("test", Function4) 
 
 
-d2 <- read.csv("HalfHourlyDataSource.csv", check.names = FALSE) %>% mutate(TimeZoneCol = ifelse(`Data provider` == "Logica",
-                                              "GMT",
-                                              "Europe/London")) %>%
-  select(-`Data provider`)
 
 
 #This needs to be simplified so that the joining of the timezone is not part of the function
 
 test <- LoadManyRDS("test2") %>% 
-    left_join(., mutate(d2, 
+    left_join(., mutate(TimeZoneDF, 
                         `Location ID` = as.character(`Location ID`)), 
               by= "Location ID") %>% 
   ConvertToTime(., "Date and Time of capture") %>% 
@@ -132,39 +140,74 @@ test <- LoadManyRDS("test2") %>%
 
 ```
 
+#Create a test time series with missing data and use for Bigheat testing
+```{r}
 
-#Now the data can be loaded and saved effectively the trilliant logica problem needs to be resolved
+#Simple example
+test <- data.frame(matrix(data = 1, ncol = 20, nrow=100)) # create a dataframe of all 1's
+test[1:5, 1:5] <- NA #insert NA's at The top left corner
+orderedheat(!is.na(test),order = "none", mergex = 1, mergey = 1) #visualise
 
-Load smart meter type, separate into trilliant and logica, then filter to only include the times of interest.
-```{r Meter Type}
-setwd(datafile)
-datasource <- read.csv("HalfHourlyDataSource.csv")
 
-files<- list.files()
-file.index<- grep(".rds", files)
+#Another example timeseries.
 
-#Runs in parallel if the code is in aws mode
-if(isAWS){
- smartdata<- mclapply(files[file.index], function(n){
-    df <- readRDS(n)
-    print("Data Loaded")
-  filterTime(df,datasource)
-  },
-  mc.cores = detectCores())
-}else{
-  smartdata<- lapply(files[file.index], function(n){
-    df <- readRDS(n)
-    print("Data Loaded")
-  filterTime(df,datasource)
-  }
-)
-}
-smartdata <- bind_rows(smartdata)
-setwd(SubDataSets)
-saveRDS(smartdata, "filteredset.rds")
-smartdata <-readRDS("filteredset.rds")
+#10 Id's run for 100 days from 01-01
 
+set.seed(1999)
+IDnums<- sample(1:20, replace = FALSE) #generate the ID's so that there is no structure within the blocks
+
+#Each block starts and stops at different times. This will create NA's in the data set when it is put into long form
+
+block1 <-data_frame(
+          Dates = rep(seq(dmy("01-01-2016"),(dmy("01-01-2016") + days(100-1)), by = 1), times = 10),
+          Value = rep(1:100, 10),
+          ID = rep(IDnums[1:10], each = 100)
+          )
+
+block2 <-data_frame(
+          Dates = rep(seq(dmy("01-03-2016"),(dmy("01-03-2016") + days(50-1)), by = 1), times = 5),
+          Value = rep(1:50, 5),
+          ID = rep(IDnums[11:15], each = 50)
+          )
+
+
+block3 <-data_frame(
+          Dates = rep(seq(dmy("01-02-2016"),(dmy("01-02-2016") + days(100-1)), by = 1), times = 5),
+          Value = rep(1:100, 5),
+          ID = rep(IDnums[16:20], each = 100)
+          )
+
+#Combine the data frames together and then use dcast/spread to convert it to wide form
+df <- bind_rows(block1,block2,block3) %>% 
+  dcast(., ID~Dates, 
+              value.var = "Value", 
+              drop=TRUE)
+
+#add in some additional NA values
+df[1:nrow(df),c(2:5,73:77)] <- NA
+
+#create a new data frame that shows 1 if valid data and 0 if NA
+df2 <-!is.na(df[,-1])
+
+#Visualise the data
+orderedheat(df2,order = "none")
+
+#Compression isn't necessary so change merge from default aggregating 5 cells to 1
+orderedheat(df2,order = "none", mergey = 1, mergex = 1)
+
+#See what a fully organised dataset would look like
+orderedheat(df2,order = "both", mergey = 1, mergex = 1)
+
+#In this case we want data in chronological order so we run again
+orderedheat(df2,order = "row", mergey = 1, mergex = 1)
+
+#If you want to have more than just the plot you can use the subfunction of big heat to return the order etc of the Rows and Columns
+CellOrder <- createorder(df2)
+
+#This allows us to see the groupings of the IDs, which can be useful when subsetting the data frame to find high quality zones.
+df$ID[CellOrder$Roworder]
 ```
+
 
 
 #After the data has been cleanded for the logica trilliant split, the data needs to be reshaped for a smartmeter per row and a time unit per column.
