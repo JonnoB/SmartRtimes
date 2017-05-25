@@ -29,16 +29,9 @@ isAWS <-(Sys.info()[1]=="Linux")
 Project Folders
 ```{r Paths}
 #basewd needs to be changed
-if(isAWS){
-  basewd<- file.path(getwd(),"Dropbox/Thesis-Data")
 
-      functioncode <- file.path(basewd, "SmartMeterThesisCode","Functions")
-  } else {
-  
-  basewd <- "C:/Users/pc1/Dropbox/Thesis-Data"
-  functioncode <- "C:/Users/pc1/Dropbox/Thesis-Data/SmartMeterThesisCode/Functions"
-  }
-
+basewd<- file.path(getwd(),"Dropbox/Thesis-Data")
+functioncode <- file.path(basewd, "SmartMeterThesisCode","Functions")
 SubDataSets <- file.path(basewd, "SubDataSets")
 datafile <- file.path(basewd, "TCa1")
 
@@ -102,7 +95,7 @@ data <- LoadManyCSV("folder", Function1 )
 #join on the timezone data
 #Convert to time object with regards the timezone of the measurement
 #Filter to only the hours required
-Function4 <- substitute( 
+Function <- substitute( 
   x %>% 
     left_join(., mutate(TimeZoneDF, 
                         `Location ID` = as.character(`Location ID`)), 
@@ -120,8 +113,8 @@ TimeZoneDF <- read.csv("HalfHourlyDataSource.csv", check.names = FALSE) %>% muta
   select(-`Data provider`)
 
 
-#SaveManyRDS("ScanTest.csv", "test2", 1e4)
-TestOut <- LoadManyRDS("test2", Function4)
+SaveManyCSV("ScanTest.csv", "test2", 1e4)
+TestOut <- LoadManyCSV("test2", Function)
 
 #MakeManyRDS("TrialMonitoringDataHH.csv", "test", 1e6)
 TestOutWhole <- LoadManyRDS("test", Function4) 

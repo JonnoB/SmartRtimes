@@ -1,0 +1,80 @@
+---
+title: "Untitled"
+author: "Jonathan Bourne"
+date: "22 May 2017"
+output: html_document
+---
+
+
+```{r setup_block}
+#Load Packages
+packages <-c("stringr", "lubridate", "data.table", "R.utils", "corrplot", "Matrix", "ff", "zoo", "parallel", "tidyverse")
+
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+sapply(packages, library, character.only = TRUE)
+rm(list=c("packages",  "new.packages"))
+  
+
+#setup paths
+basewd<- file.path(getwd(),"Dropbox/Thesis-Data")
+SubDataSets <- file.path(basewd, "SubDataSets")
+datafile <- file.path(basewd, "TCa1")
+
+```
+
+```{r Load_functions}
+
+setwd("/home/jonno/SmartRtimes/Functions")
+sapply(list.files(), source)
+
+setwd(file.path("/home/jonno/BigHeat"))
+sapply(list.files(pattern = ".R"), source)
+
+```
+
+
+```{r Setup_load}
+setwd(datafile)
+
+#This is what I want to happen to the data as it is loaded from the csv file
+Conv_and_filter <- substitute( 
+  x %>% mutate(`Location ID` = as.character(`Location ID`)) %>%
+    left_join(., mutate(TimeZoneDF, 
+                        `Location ID` = as.character(`Location ID`)), 
+              by= "Location ID") %>% 
+    ConvertToTime(., "Date and Time of capture") %>% #Convert the time column to time class
+  FilterTime(.,"Date and Time of capture", Start = 16, End = 21)
+  )
+
+
+#Loads the timezone data into a data frame
+TimeZoneDF <- read.csv("HalfHourlyDataSource.csv", check.names = FALSE) %>% mutate(TimeZoneCol = ifelse(`Data provider` == "Logica",
+                                              "GMT",
+                                              "Europe/London")) %>%
+  select(-`Data provider`)
+
+```
+
+```{r Load_and_Filter}
+#This takes a while...
+SaveManyCSV("TrialMonitoringDataHH.csv", 
+            "SplitCSV",
+            1e+6,
+            Conv_and_filter)
+
+smartdata <- LoadManyCSV("SplitCSV")
+```
+
+```{r spread_data}
+smartdata  <- smartdata %>% 
+  select(`Location ID`, 
+         Date.Time = `Date and Time of capture`,
+         Parameter) %>%
+  dcast(., Date.Time ~`Location ID`, 
+              value.var = "Parameter", 
+              drop=FALSE)
+
+```
+

@@ -1,4 +1,4 @@
-LoadManyRDS <- function(FolderPath,  CallFunction = NULL){
+LoadManyCSV <- function(FolderPath,  CallFunction = NULL){
  #Loads a string of RDS files created by the Save many RDS Function
   #FolderPath : The path of the Folder containing the files
   #CallFunction : If additional functions are to be called they are 
